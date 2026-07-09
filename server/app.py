@@ -121,6 +121,16 @@ def get_transcript():
                     'writesubtitles': True,
                     'writeautomaticsub': True,
                     'skip_download': True,
+                    'socket_timeout': 30,
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    },
+                    'extractor_args': {
+                        'youtube': {
+                            'player_client': ['web'],
+                            'player_skip': ['javascript', 'config']
+                        }
+                    }
                 }
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
