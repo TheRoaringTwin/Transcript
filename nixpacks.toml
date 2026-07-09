@@ -1,0 +1,17 @@
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.11"
+
+[phases.setup]
+nixPackages = ["python311", "python311Packages.pip"]
+
+[phases.install]
+cmds = [
+  "pip install --upgrade pip",
+  "cd server && pip install -r requirements.txt"
+]
+
+[phases.build]
+# No build phase needed for Python Flask
+
+[phases.start]
+cmd = "cd server && python app.py"
