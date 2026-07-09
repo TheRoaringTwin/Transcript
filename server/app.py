@@ -1,10 +1,10 @@
 import sys
 import io
+import os
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from youtube_transcript_api import YouTubeTranscriptApi
-import subprocess
-import json
+import requests
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -101,7 +101,8 @@ def get_transcript():
         print(f"📥 Fetching transcript for: {video_id}")
         print(f"{'='*60}")
 
-        # Fetch transcript using YouTube Transcript API
+        # Fetch transcript using YouTube API key if available
+        api_key = os.getenv('YOUTUBE_API_KEY')
         captions = None
 
         try:
@@ -110,53 +111,93 @@ def get_transcript():
             print(f"✅ Got {len(captions)} captions using youtube-transcript-api")
         except Exception as e:
             print(f"❌ youtube-transcript-api failed: {str(e)}")
-            # Fallback to yt-dlp if available
-            try:
-                import yt_dlp
-                print("🔄 Trying yt-dlp as fallback...")
 
-                ydl_opts = {
-                    'quiet': True,
-                    'no_warnings': True,
-                    'writesubtitles': True,
-                    'writeautomaticsub': True,
-                    'skip_download': True,
-                    'socket_timeout': 30,
-                    'http_headers': {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    },
-                    'extractor_args': {
-                        'youtube': {
-                            'player_client': ['web'],
-                            'player_skip': ['javascript', 'config']
-                        }
+            # Try using YouTube API if key is available
+            if api_key:
+                try:
+                    print("🔄 Trying YouTube API with API key...")
+                    # Get caption tracks
+                    url = f"https://www.googleapis.com/youtube/v3/captions"
+                    params = {
+                        'videoId': video_id,
+                        'key': api_key
                     }
-                }
+                    response = requests.get(url, params=params, timeout=10)
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+                    if response.status_code == 200:
+                        data = response.json()
+                        items = data.get('items', [])
 
-                    # Try to get subtitles
-                    if info.get('subtitles'):
-                        # Get first available subtitle language
-                        first_lang = list(info['subtitles'].keys())[0]
-                        subs = info['subtitles'][first_lang]
-                        captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
-                        print(f"✅ Got {len(captions)} captions using yt-dlp")
-                    elif info.get('automatic_captions'):
-                        # Fallback to auto-generated captions
-                        first_lang = list(info['automatic_captions'].keys())[0]
-                        subs = info['automatic_captions'][first_lang]
-                        captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
-                        print(f"✅ Got {len(captions)} auto-generated captions using yt-dlp")
-                    else:
-                        raise Exception("No subtitles found")
-            except Exception as e2:
-                print(f"❌ yt-dlp also failed: {str(e2)}")
-                return jsonify({
-                    'success': False,
-                    'error': f'This video does not have available transcripts. Error: {str(e2)}'
-                }), 400
+                        if items:
+                            # Try to get English captions first
+                            caption_id = None
+                            for item in items:
+                                if item.get('snippet', {}).get('language') == 'en':
+                                    caption_id = item['id']
+                                    break
+
+                            # If no English, get first available
+                            if not caption_id:
+                                caption_id = items[0]['id']
+
+                            # Download caption track
+                            download_url = f"https://www.googleapis.com/youtube/v3/captions/{caption_id}"
+                            download_params = {'key': api_key, 'tfmt': 'vtt'}
+                            caption_response = requests.get(download_url, params=download_params, timeout=10)
+
+                            if caption_response.status_code == 200:
+                                # Parse VTT format
+                                lines = caption_response.text.split('\n')
+                                captions = []
+                                for line in lines:
+                                    if '-->' not in line and line.strip() and not line.startswith('WEBVTT'):
+                                        captions.append({'text': line.strip(), 'start': 0})
+
+                                if captions:
+                                    print(f"✅ Got {len(captions)} captions using YouTube API")
+                except Exception as api_error:
+                    print(f"❌ YouTube API failed: {str(api_error)}")
+
+            # Fallback to yt-dlp if YouTube API didn't work
+            if not captions:
+                try:
+                    import yt_dlp
+                    print("🔄 Trying yt-dlp as final fallback...")
+
+                    ydl_opts = {
+                        'quiet': True,
+                        'no_warnings': True,
+                        'writesubtitles': True,
+                        'writeautomaticsub': True,
+                        'skip_download': True,
+                        'socket_timeout': 30,
+                    }
+
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+
+                        if info.get('subtitles'):
+                            first_lang = list(info['subtitles'].keys())[0]
+                            subs = info['subtitles'][first_lang]
+                            captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
+                            print(f"✅ Got {len(captions)} captions using yt-dlp")
+                        elif info.get('automatic_captions'):
+                            first_lang = list(info['automatic_captions'].keys())[0]
+                            subs = info['automatic_captions'][first_lang]
+                            captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
+                            print(f"✅ Got {len(captions)} auto-generated captions using yt-dlp")
+                except Exception as e2:
+                    print(f"❌ All methods failed: {str(e2)}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'This video does not have available transcripts. Error: {str(e2)}'
+                    }), 400
+
+        if not captions:
+            return jsonify({
+                'success': False,
+                'error': 'No transcripts found. Please try a different video.'
+            }), 400
 
         # Format transcript
         transcript = format_transcript(captions)
