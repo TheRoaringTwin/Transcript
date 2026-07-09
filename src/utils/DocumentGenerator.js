@@ -93,7 +93,7 @@ export class DocumentGenerator {
   }
 
   extractFormulas() {
-    const formulaPattern = /([A-Za-z]\s*=\s*[A-Za-z0-9+\-*\/()²³⁴\s]+)/g;
+    const formulaPattern = /([A-Za-z]\s*=\s*[A-Za-z0-9+\-*/()²³⁴\s]+)/g;
     const allText = this.sections.map(s => s.content).join(' ');
     const matches = allText.match(formulaPattern);
 
