@@ -14,7 +14,15 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": False,
+        "max_age": 3600
+    }
+})
 
 def extract_video_id(url):
     """Extract video ID from YouTube URL"""
@@ -249,10 +257,14 @@ def health():
     }), 200
 
 if __name__ == '__main__':
+    import os
+    port = int(os.getenv('PORT', 3001))
+    host = os.getenv('HOST', '0.0.0.0')
+    debug = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+
     print("\n" + "="*70)
     print("✅ PYTHON TRANSCRIPT SERVER RUNNING")
     print("="*70)
-    print("🌐 App: http://localhost:3000")
-    print("🔌 Backend: http://localhost:3001")
+    print(f"🌐 Backend running on http://{host}:{port}")
     print("="*70 + "\n")
-    app.run(host='localhost', port=3001, debug=True, use_reloader=False)
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
