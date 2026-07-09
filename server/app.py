@@ -99,30 +99,29 @@ def get_transcript():
         print(f"📥 Fetching transcript for: {video_id}")
         print(f"{'='*60}")
 
-        # Fetch transcript using new API
-        api = YouTubeTranscriptApi()
+        # Fetch transcript
         captions = None
 
         try:
             # Try to get English transcript
-            captions = api.fetch(video_id, languages=['en'])
+            captions = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
             print(f"✅ Got {len(captions)} captions in English")
         except Exception as e:
             print(f"❌ Failed to get English captions: {str(e)}")
             # Try to get available transcripts
             try:
-                transcripts = api.list(video_id)
+                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
                 print(f"📋 Available transcripts: {transcripts}")
 
                 # Try to get any available transcript
-                # The api.list() returns a Transcripts object with methods to access transcripts
+                captions = None
                 try:
                     # Try manually created first
-                    if hasattr(transcripts, 'manually_created_transcripts') and transcripts.manually_created_transcripts:
+                    if transcripts.manually_created_transcripts:
                         captions = transcripts.manually_created_transcripts[0].fetch()
                         print(f"✅ Using manual transcript")
                     # Then try generated
-                    elif hasattr(transcripts, 'generated_transcripts') and transcripts.generated_transcripts:
+                    elif transcripts.generated_transcripts:
                         captions = transcripts.generated_transcripts[0].fetch()
                         print(f"✅ Using auto-generated transcript")
                     else:
