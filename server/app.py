@@ -3,6 +3,8 @@ import io
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from youtube_transcript_api import YouTubeTranscriptApi
+import subprocess
+import json
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -103,15 +105,48 @@ def get_transcript():
         captions = None
 
         try:
-            # Fetch transcript with language preference
+            # Try youtube-transcript-api first
             captions = YouTubeTranscriptApi.get_transcript(video_id)
-            print(f"✅ Got {len(captions)} captions")
+            print(f"✅ Got {len(captions)} captions using youtube-transcript-api")
         except Exception as e:
-            print(f"❌ Failed to get transcript: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': f'This video does not have available transcripts. Error: {str(e)}'
-            }), 400
+            print(f"❌ youtube-transcript-api failed: {str(e)}")
+            # Fallback to yt-dlp if available
+            try:
+                import yt_dlp
+                print("🔄 Trying yt-dlp as fallback...")
+
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'writesubtitles': True,
+                    'writeautomaticsub': True,
+                    'skip_download': True,
+                }
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+
+                    # Try to get subtitles
+                    if info.get('subtitles'):
+                        # Get first available subtitle language
+                        first_lang = list(info['subtitles'].keys())[0]
+                        subs = info['subtitles'][first_lang]
+                        captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
+                        print(f"✅ Got {len(captions)} captions using yt-dlp")
+                    elif info.get('automatic_captions'):
+                        # Fallback to auto-generated captions
+                        first_lang = list(info['automatic_captions'].keys())[0]
+                        subs = info['automatic_captions'][first_lang]
+                        captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
+                        print(f"✅ Got {len(captions)} auto-generated captions using yt-dlp")
+                    else:
+                        raise Exception("No subtitles found")
+            except Exception as e2:
+                print(f"❌ yt-dlp also failed: {str(e2)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'This video does not have available transcripts. Error: {str(e2)}'
+                }), 400
 
         # Format transcript
         transcript = format_transcript(captions)
