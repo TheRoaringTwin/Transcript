@@ -103,41 +103,47 @@ def get_transcript():
         captions = None
 
         try:
-            # Try to get English transcript
+            # Try to get English transcript first
             captions = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
             print(f"✅ Got {len(captions)} captions in English")
         except Exception as e:
             print(f"❌ Failed to get English captions: {str(e)}")
-            # Try to get available transcripts
+            # Try to get any available transcript without language preference
             try:
-                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-                print(f"📋 Available transcripts: {transcripts}")
-
-                # Try to get any available transcript
-                captions = None
+                captions = YouTubeTranscriptApi.get_transcript(video_id)
+                print(f"✅ Got {len(captions)} captions in default language")
+            except Exception as e_default:
+                print(f"❌ Failed to get default transcript: {str(e_default)}")
+                # Try to list and fetch available transcripts
                 try:
-                    # Try manually created first
-                    if transcripts.manually_created_transcripts:
-                        captions = transcripts.manually_created_transcripts[0].fetch()
-                        print(f"✅ Using manual transcript")
-                    # Then try generated
-                    elif transcripts.generated_transcripts:
-                        captions = transcripts.generated_transcripts[0].fetch()
-                        print(f"✅ Using auto-generated transcript")
-                    else:
-                        raise Exception("No transcripts available")
-                except Exception as fetch_error:
-                    print(f"❌ Could not fetch available transcript: {str(fetch_error)}")
-                    raise
+                    transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                    print(f"📋 Available transcripts: {transcripts}")
 
-                if not captions:
-                    raise Exception("No usable transcripts available")
-            except Exception as e2:
-                print(f"❌ Error: {str(e2)}")
-                return jsonify({
-                    'success': False,
-                    'error': f'This video does not have available transcripts. Error: {str(e2)}'
-                }), 400
+                    # Try to get any available transcript
+                    captions = None
+                    try:
+                        # Try manually created first
+                        if transcripts.manually_created_transcripts:
+                            captions = transcripts.manually_created_transcripts[0].fetch()
+                            print(f"✅ Using manual transcript")
+                        # Then try generated
+                        elif transcripts.generated_transcripts:
+                            captions = transcripts.generated_transcripts[0].fetch()
+                            print(f"✅ Using auto-generated transcript")
+                        else:
+                            raise Exception("No transcripts available")
+                    except Exception as fetch_error:
+                        print(f"❌ Could not fetch available transcript: {str(fetch_error)}")
+                        raise
+
+                    if not captions:
+                        raise Exception("No usable transcripts available")
+                except Exception as e2:
+                    print(f"❌ Error: {str(e2)}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'This video does not have available transcripts. Error: {str(e2)}'
+                    }), 400
 
         # Format transcript
         transcript = format_transcript(captions)
