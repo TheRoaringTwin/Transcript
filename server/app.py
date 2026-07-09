@@ -103,22 +103,15 @@ def get_transcript():
         captions = None
 
         try:
-            # Try to get English transcript
-            captions = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-            print(f"✅ Got {len(captions)} captions in English")
+            # Fetch transcript with language preference
+            captions = YouTubeTranscriptApi.get_transcript(video_id)
+            print(f"✅ Got {len(captions)} captions")
         except Exception as e:
-            print(f"❌ Failed to get English captions: {str(e)}")
-
-            # Try to get transcript in any available language
-            try:
-                captions = YouTubeTranscriptApi.get_transcript(video_id)
-                print(f"✅ Got transcript in available language")
-            except Exception as e2:
-                print(f"❌ Failed to get any transcript: {str(e2)}")
-                return jsonify({
-                    'success': False,
-                    'error': f'This video does not have available transcripts. Error: {str(e2)}'
-                }), 400
+            print(f"❌ Failed to get transcript: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'This video does not have available transcripts. Error: {str(e)}'
+            }), 400
 
         # Format transcript
         transcript = format_transcript(captions)
