@@ -106,11 +106,29 @@ def get_transcript():
         captions = None
 
         try:
-            # Try youtube-transcript-api first
+            # Try youtube-transcript-api first with better headers
+            import youtube_transcript_api
+
+            # Add custom headers to mimic browser
+            session = requests.Session()
+            session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+            })
+
             captions = YouTubeTranscriptApi.get_transcript(video_id)
             print(f"✅ Got {len(captions)} captions using youtube-transcript-api")
         except Exception as e:
-            print(f"❌ youtube-transcript-api failed: {str(e)}")
+            error_str = str(e)
+            print(f"❌ youtube-transcript-api failed: {error_str}")
+            print(f"   Full error type: {type(e).__name__}")
+
+            # Check if it's actually a bot detection issue
+            if "No captions" in error_str or "disabled" in error_str.lower():
+                print("⚠️  This might be YouTube bot detection (works on localhost but not on server)")
+
+            captions = None
 
             # Try using YouTube API if key is available
             if api_key:
@@ -162,7 +180,7 @@ def get_transcript():
             if not captions:
                 try:
                     import yt_dlp
-                    print("🔄 Trying yt-dlp as final fallback...")
+                    print("🔄 Trying yt-dlp with bot-avoidance settings...")
 
                     ydl_opts = {
                         'quiet': True,
@@ -171,27 +189,67 @@ def get_transcript():
                         'writeautomaticsub': True,
                         'skip_download': True,
                         'socket_timeout': 30,
+                        # Bot detection avoidance
+                        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                        'http_headers': {
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Accept-Encoding': 'gzip, deflate',
+                        },
+                        'extractor_args': {
+                            'youtube': {
+                                'lang': ['en'],
+                            }
+                        }
                     }
 
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        print(f"   Extracting info for: {video_id}")
                         info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
 
                         if info.get('subtitles'):
                             first_lang = list(info['subtitles'].keys())[0]
                             subs = info['subtitles'][first_lang]
                             captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
-                            print(f"✅ Got {len(captions)} captions using yt-dlp")
+                            print(f"✅ Got {len(captions)} captions using yt-dlp (manual captions)")
                         elif info.get('automatic_captions'):
                             first_lang = list(info['automatic_captions'].keys())[0]
                             subs = info['automatic_captions'][first_lang]
                             captions = [{'text': item['text'], 'start': item.get('start', 0)} for item in subs]
-                            print(f"✅ Got {len(captions)} auto-generated captions using yt-dlp")
+                            print(f"✅ Got {len(captions)} captions using yt-dlp (auto-generated)")
+                        else:
+                            print(f"   Video info: title={info.get('title')}, has_subtitles={bool(info.get('subtitles'))}, has_auto_subs={bool(info.get('automatic_captions'))}")
+
                 except Exception as e2:
-                    print(f"❌ All methods failed: {str(e2)}")
-                    return jsonify({
-                        'success': False,
-                        'error': f'This video does not have available transcripts. Error: {str(e2)}'
-                    }), 400
+                    print(f"❌ yt-dlp failed: {str(e2)}")
+                    import traceback
+                    print(f"   Traceback: {traceback.format_exc()}")
+
+            # Last resort: Try external service
+            if not captions:
+                try:
+                    print("🔄 Trying external transcript service as last resort...")
+                    response = requests.get(
+                        f'https://www.yt-subs.com/transcript/download/{video_id}',
+                        headers={
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        },
+                        timeout=10
+                    )
+
+                    if response.status_code == 200:
+                        # Parse the response
+                        text_content = response.text
+                        if text_content and len(text_content) > 50:
+                            captions = [{'text': text_content, 'start': 0}]
+                            print(f"✅ Got transcript via external service")
+                except Exception as e3:
+                    print(f"❌ External service failed: {str(e3)}")
+
+            if not captions:
+                return jsonify({
+                    'success': False,
+                    'error': 'Unable to fetch transcript. This might be because: (1) Video has no captions, (2) Captions are disabled by creator, or (3) YouTube is blocking the request. Try a different video or check if captions are enabled.'
+                }), 400
 
         if not captions:
             return jsonify({
